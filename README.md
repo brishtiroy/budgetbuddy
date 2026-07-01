@@ -24,7 +24,7 @@ Built with React, Node.js, Express, and MongoDB.
 
 ### 1. Clone the repo
 
-git clone https://github.com/YOURUSERNAME/budgetbuddy.git
+git clone https://github.com/brishtiroy/budgetbuddy.git
 cd budgetbuddy
 
 ### 2. Backend setup
