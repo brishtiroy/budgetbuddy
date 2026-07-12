@@ -4,4 +4,4 @@ client/.env
 client/.env.production
 client/dist/
 .DS_Store
-server/node_modules
+server/node_modules/
