@@ -20,8 +20,16 @@ export default function CoupleDashboard() {
   const [myCommute, setMyCommute] = useState('');
   const [otherFixed, setOtherFixed] = useState('');
 
-  // Results
+  // Step 3 — Results & Phase 2/3 Live Data
   const [breakdown, setBreakdown] = useState(null);
+  const [expenseSummary, setExpenseSummary] = useState(null);
+  const [expensesList, setExpensesList] = useState([]);
+  const [analytics, setAnalytics] = useState(null);
+  const [reminderDay, setReminderDay] = useState(user.reminderDay || 1);
+
+  // Expense Form State (Feature 4)
+  const [addingExpense, setAddingExpense] = useState(false);
+  const [expenseForm, setExpenseForm] = useState({ amount: '', category: 'food', description: '', type: 'couple' });
 
   const savingsOptions = [10, 15, 20, 25, 30, 40, 50];
   const fmt = n => `₹${Number(n || 0).toLocaleString('en-IN')}`;
@@ -42,6 +50,7 @@ export default function CoupleDashboard() {
         setMyCommute(String(budgetRes.data.budget.myCommute || ''));
         setOtherFixed(String(budgetRes.data.budget.otherFixed || ''));
         setStep(3);
+        fetchLiveDashboardData();
       }
     } catch {
       // fresh start, no saved budget yet
@@ -77,10 +86,65 @@ export default function CoupleDashboard() {
       });
       setBreakdown(res.data);
       setStep(3);
+      fetchLiveDashboardData();
     } catch (err) {
       setError(err.response?.data?.message || 'Could not calculate — partner may not have joined yet');
     } finally {
       setLoading(false);
+    }
+  }
+
+  // Fetch live Phase 2/3 Data (Expenses & Analytics)
+  async function fetchLiveDashboardData() {
+    try {
+      const [summaryRes, listRes, analyticsRes] = await Promise.all([
+        api.get('/expenses/summary'),
+        api.get('/expenses'),
+        api.get('/analytics/overview')
+      ]);
+      setExpenseSummary(summaryRes.data);
+      // Combine couple and personal expenses for full transparency in couple mode
+      const combinedExpenses = [
+        ...(listRes.data.coupleExpenses || []),
+        ...(listRes.data.personalExpenses || [])
+      ].sort((a, b) => new Date(b.date) - new Date(a.date));
+      setExpensesList(combinedExpenses);
+      setAnalytics(analyticsRes.data);
+    } catch (err) {
+      console.error('Failed to load live tracking data:', err);
+    }
+  }
+
+  // Feature 4: Log a Daily / Joint Expense
+  async function handleAddExpense(e) {
+    e.preventDefault();
+    if (!expenseForm.amount) return alert('Please enter an amount');
+    setAddingExpense(true);
+    try {
+      await api.post('/expenses', {
+        ...expenseForm,
+        amount: Number(expenseForm.amount),
+        type: expenseForm.type
+      });
+      setExpenseForm({ amount: '', category: 'food', description: '', type: 'couple' });
+      fetchLiveDashboardData();
+    } catch (err) {
+      alert('Failed to log expense');
+    } finally {
+      setAddingExpense(false);
+    }
+  }
+
+  // Feature 8: Update Automated Email Reminder Day
+  async function handleUpdateReminder(day) {
+    setReminderDay(day);
+    try {
+      await api.put('/budget/salary', { salary: Number(mySalary) || breakdown?.user1?.salary || 0, savingsPercent: mySavingsPct, reminderDay: day });
+      const updatedUser = { ...user, reminderDay: day };
+      localStorage.setItem('user', JSON.stringify(updatedUser));
+      alert(`Automated joint savings reminder set for Day ${day} of every month! 💌`);
+    } catch (err) {
+      console.error('Failed to update reminder day');
     }
   }
 
@@ -140,17 +204,15 @@ export default function CoupleDashboard() {
         <div className="flex items-center gap-2 mb-8">
           {['Salaries', 'Fixed costs', 'Your budget'].map((label, i) => (
             <div key={i} className="flex items-center gap-2">
-              <div className={`flex items-center gap-2 ${
-                step > i + 1 ? 'text-green-400' :
+              <div className={`flex items-center gap-2 ${step > i + 1 ? 'text-green-400' :
                 step === i + 1 ? 'text-white' : 'text-gray-600'
-              }`}>
-                <div className={`w-7 h-7 rounded-full flex items-center justify-center text-sm font-bold border ${
-                  step > i + 1
-                    ? 'bg-green-500/20 border-green-500 text-green-400'
-                    : step === i + 1
+                }`}>
+                <div className={`w-7 h-7 rounded-full flex items-center justify-center text-sm font-bold border ${step > i + 1
+                  ? 'bg-green-500/20 border-green-500 text-green-400'
+                  : step === i + 1
                     ? 'bg-pink-600 border-pink-500 text-white'
                     : 'border-gray-700 text-gray-600'
-                }`}>
+                  }`}>
                   {step > i + 1 ? '✓' : i + 1}
                 </div>
                 <span className="text-sm hidden sm:block">{label}</span>
@@ -196,11 +258,10 @@ export default function CoupleDashboard() {
                 <button
                   key={opt}
                   onClick={() => setMySavingsPct(opt)}
-                  className={`px-4 py-2 rounded-lg text-sm font-medium transition-all ${
-                    mySavingsPct === opt
-                      ? 'bg-pink-600 text-white shadow-lg'
-                      : 'bg-white/5 text-gray-400 hover:bg-white/10'
-                  }`}
+                  className={`px-4 py-2 rounded-lg text-sm font-medium transition-all ${mySavingsPct === opt
+                    ? 'bg-pink-600 text-white shadow-lg'
+                    : 'bg-white/5 text-gray-400 hover:bg-white/10'
+                    }`}
                 >
                   {opt}%
                 </button>
@@ -309,14 +370,19 @@ export default function CoupleDashboard() {
           </div>
         )}
 
-        {/* ── STEP 3: Results ── */}
+        {/* ── STEP 3: Results & Phase 2/3 Advanced Features ── */}
         {step === 3 && breakdown && (
           <div className="space-y-5">
 
             {/* Combined overview */}
             <div className="bg-gradient-to-br from-pink-900/60 to-purple-900/60 border border-pink-500/20 rounded-2xl p-6">
-              <p className="text-pink-300 text-xs font-medium uppercase tracking-wider mb-4">
-                Combined picture
+              <p className="text-pink-300 text-xs font-medium uppercase tracking-wider mb-4 flex justify-between items-center">
+                <span>Combined picture</span>
+                {expenseSummary && (
+                  <span className="bg-pink-500/20 text-white px-2 py-0.5 rounded-full text-[10px] normal-case">
+                    Live Spendable: {fmt(expenseSummary.remainingSpendableMoney)}
+                  </span>
+                )}
               </p>
               <div className="grid grid-cols-2 gap-4">
                 <div>
@@ -338,6 +404,122 @@ export default function CoupleDashboard() {
                   <p className="text-xl font-semibold text-red-400">{fmt(breakdown.fixedExpenses)}</p>
                 </div>
               </div>
+            </div>
+
+            {/* NEW: Feature 9 — All-Time Analytics KPI Block for Couples */}
+            {analytics && (
+              <div className="bg-gradient-to-r from-pink-950/80 to-purple-950/80 border border-pink-500/30 rounded-2xl p-5">
+                <h3 className="font-semibold text-pink-300 mb-3 flex items-center justify-between text-sm">
+                  <span>💑 Our Joint Goals & Efficiency</span>
+                  <span className="text-xs bg-pink-500/20 px-2 py-0.5 rounded-full text-white">All-Time Stats</span>
+                </h3>
+                <div className="grid grid-cols-3 gap-2 text-center">
+                  <div className="bg-black/30 p-3 rounded-xl border border-white/5">
+                    <p className="text-[11px] text-gray-400">Success Rate</p>
+                    <p className="text-lg font-bold text-green-400">{analytics.successRate || '0%'}</p>
+                    <p className="text-[9px] text-gray-500">{analytics.completed || 0}/{analytics.totalGoals || 0} goals</p>
+                  </div>
+                  <div className="bg-black/30 p-3 rounded-xl border border-white/5">
+                    <p className="text-[11px] text-gray-400">Total Saved</p>
+                    <p className="text-lg font-bold text-pink-300">{fmt(analytics.totalSavedAllTime)}</p>
+                    <p className="text-[9px] text-gray-500">across all goals</p>
+                  </div>
+                  <div className="bg-black/30 p-3 rounded-xl border border-white/5">
+                    <p className="text-[11px] text-gray-400">Time Efficiency</p>
+                    <p className="text-lg font-bold text-blue-400">{analytics.timeEfficiency?.early || 0} Early</p>
+                    <p className="text-[9px] text-gray-500">{analytics.timeEfficiency?.onTime || 0} On Time</p>
+                  </div>
+                </div>
+              </div>
+            )}
+
+            {/* NEW: Feature 4 — Live Joint / Daily Expense Logger */}
+            <div className="bg-white/5 border border-pink-500/20 rounded-2xl p-6">
+              <div className="flex justify-between items-center mb-4">
+                <div>
+                  <h3 className="font-semibold text-pink-300">🛒 Joint Expense Tracker</h3>
+                  <p className="text-xs text-gray-400">Log purchases against your shared spending cash</p>
+                </div>
+                <span className="text-xs bg-pink-500/10 text-pink-300 px-2.5 py-1 rounded-lg">
+                  Spent: {fmt(expenseSummary?.variableExpensesLogged || 0)}
+                </span>
+              </div>
+
+              {/* Expense input form */}
+              <form onSubmit={handleAddExpense} className="space-y-3 mb-5">
+                <div className="grid grid-cols-4 gap-2">
+                  <div className="relative col-span-1">
+                    <span className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400 text-xs">₹</span>
+                    <input
+                      type="number"
+                      placeholder="Amount"
+                      value={expenseForm.amount}
+                      onChange={e => setExpenseForm({ ...expenseForm, amount: e.target.value })}
+                      className="w-full bg-black/40 border border-white/10 rounded-xl pl-7 pr-2 py-2 text-sm focus:outline-none focus:border-pink-500"
+                    />
+                  </div>
+                  <select
+                    value={expenseForm.category}
+                    onChange={e => setExpenseForm({ ...expenseForm, category: e.target.value })}
+                    className="col-span-1 bg-black/40 border border-white/10 rounded-xl px-2 py-2 text-sm text-gray-300 focus:outline-none focus:border-pink-500 capitalize"
+                  >
+                    {['food', 'groceries', 'outing', 'misc', 'other'].map(cat => (
+                      <option key={cat} value={cat} className="bg-gray-900">{cat}</option>
+                    ))}
+                  </select>
+                  <select
+                    value={expenseForm.type}
+                    onChange={e => setExpenseForm({ ...expenseForm, type: e.target.value })}
+                    className="col-span-1 bg-black/40 border border-white/10 rounded-xl px-2 py-2 text-xs text-pink-300 focus:outline-none focus:border-pink-500"
+                  >
+                    <option value="couple" className="bg-gray-900">👫 Shared</option>
+                    <option value="personal" className="bg-gray-900">🧍 Solo</option>
+                  </select>
+                  <input
+                    type="text"
+                    placeholder="Note (optional)"
+                    value={expenseForm.description}
+                    onChange={e => setExpenseForm({ ...expenseForm, description: e.target.value })}
+                    className="col-span-1 bg-black/40 border border-white/10 rounded-xl px-3 py-2 text-sm focus:outline-none focus:border-pink-500"
+                  />
+                </div>
+                <button
+                  type="submit"
+                  disabled={addingExpense}
+                  className="w-full bg-pink-600 hover:bg-pink-500 disabled:opacity-40 text-white text-xs font-semibold py-2 rounded-xl transition-all shadow-md shadow-pink-900/20"
+                >
+                  {addingExpense ? 'Logging...' : '+ Add Purchase to Joint Ledger'}
+                </button>
+              </form>
+
+              {/* Recent spending ledger */}
+              {expensesList.length > 0 && (
+                <div className="border-t border-white/10 pt-3">
+                  <p className="text-[11px] text-gray-400 mb-2 font-medium">RECENT PURCHASES THIS MONTH</p>
+                  <div className="space-y-1.5 max-h-36 overflow-y-auto pr-1">
+                    {expensesList.map(exp => (
+                      <div key={exp._id} className="flex justify-between items-center text-xs bg-black/20 p-2 rounded-lg border border-white/5">
+                        <div className="flex items-center gap-2">
+                          <span>{exp.category === 'food' ? '🍽️' : exp.category === 'groceries' ? '🛒' : exp.category === 'outing' ? '🎬' : '✨'}</span>
+                          <div>
+                            <p className="font-medium text-gray-300 capitalize flex items-center gap-1.5">
+                              <span>{exp.category}</span>
+                              <span className={`text-[9px] px-1.5 py-0.2 rounded-full ${exp.type === 'couple' ? 'bg-pink-500/20 text-pink-300' : 'bg-purple-500/20 text-purple-300'}`}>
+                                {exp.type === 'couple' ? 'Shared' : 'Solo'}
+                              </span>
+                            </p>
+                            {exp.description && <p className="text-[10px] text-gray-500">{exp.description}</p>}
+                          </div>
+                        </div>
+                        <div className="text-right">
+                          <span className="font-bold text-red-400">− {fmt(exp.amount)}</span>
+                          <p className="text-[9px] text-gray-500">{new Date(exp.date).toLocaleDateString('en-IN', { month: 'short', day: 'numeric' })}</p>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
             </div>
 
             {/* Personal savings */}
@@ -404,8 +586,8 @@ export default function CoupleDashboard() {
                     <div className="flex items-center gap-2">
                       <span>
                         {key === 'food' ? '🍽️' :
-                         key === 'groceries' ? '🛒' :
-                         key === 'outing' ? '🎬' : '✨'}
+                          key === 'groceries' ? '🛒' :
+                            key === 'outing' ? '🎬' : '✨'}
                       </span>
                       <span className="text-gray-300 capitalize">{key}</span>
                     </div>
@@ -413,6 +595,27 @@ export default function CoupleDashboard() {
                   </div>
                 ))}
               </div>
+            </div>
+
+            {/* NEW: Feature 8 — Automated Email Reminder Selector */}
+            <div className="bg-white/5 border border-white/10 rounded-2xl p-5 flex items-center justify-between text-sm">
+              <div>
+                <p className="font-semibold text-white flex items-center gap-1.5">
+                  <span>⏰ Joint Savings Check-in Reminder</span>
+                </p>
+                <p className="text-gray-400 text-xs">Pick the monthly date both partners receive automated check-in emails</p>
+              </div>
+              <select
+                value={reminderDay}
+                onChange={e => handleUpdateReminder(Number(e.target.value))}
+                className="bg-black/50 border border-white/20 rounded-xl px-3 py-1.5 text-xs text-pink-300 focus:outline-none focus:border-pink-500 font-semibold"
+              >
+                {Array.from({ length: 28 }, (_, i) => i + 1).map(day => (
+                  <option key={day} value={day} className="bg-gray-900">
+                    Day {day} of month
+                  </option>
+                ))}
+              </select>
             </div>
 
             {/* Goals CTA */}
