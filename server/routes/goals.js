@@ -10,23 +10,29 @@ const getMonthYear = () => {
 };
 
 
-// 1. Create a goal with Automatic Salary Split Calculation
+// 1. Create a goal with Automatic Salary Split Calculation (Feature 1 & 3)
 router.post('/', auth, async (req, res) => {
   try {
     const { name, targetAmount, targetDate, type } = req.body;
     const user = await User.findById(req.userId);
 
+    // Default fallback is 50/50 split if partner hasn't joined yet
     let splitRatio = { user1Percent: 50, user2Percent: 50, isCustom: false };
 
+    // If it's a couple goal, dynamically calculate the suggested split ratio based on salaries
     if (type === 'couple' && user.coupleId) {
       const couple = await Couple.findById(user.coupleId)
         .populate('user1', 'salary savingsPercent')
-        .populate('user2', 'salary savingsPercent')
+        .populate('user2', 'salary savingsPercent');
 
-      if (couple.user1 && couple.user2) {
-        const u1TakeHome = couple.user1.salary * (1 - couple.user1.savingsPercent / 100);
-        const u2TakeHome = couple.user2.salary * (1 - couple.user2.savingsPercent / 100);
-        const totalTakeHome = u1TakeHome + u2.TakeHome;
+      const u1 = couple?.user1;
+      const u2 = couple?.user2;
+
+      // Only calculate proportional split if BOTH partners exist in the database
+      if (u1 && u2) {
+        const u1TakeHome = (u1.salary || 0) * (1 - (u1.savingsPercent || 0) / 100);
+        const u2TakeHome = (u2.salary || 0) * (1 - (u2.savingsPercent || 0) / 100);
+        const totalTakeHome = u1TakeHome + u2TakeHome;
 
         if (totalTakeHome > 0) {
           const u1Percent = Math.round((u1TakeHome / totalTakeHome) * 100);
@@ -52,6 +58,7 @@ router.post('/', auth, async (req, res) => {
     await goal.save();
     res.json(goal);
   } catch (err) {
+    console.error('ADD GOAL ERROR:', err);
     res.status(500).json({ message: err.message });
   }
 });
